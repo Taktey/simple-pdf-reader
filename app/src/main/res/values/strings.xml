@@ -1,0 +1,32 @@
+<resources>
+    <string name="app_name">Simple PDF Reader</string>
+    <string name="open_pdf">Открыть PDF</string>
+    <string name="open_another">Открыть другой PDF</string>
+    <string name="share">Поделиться</string>
+    <string name="close">Закрыть документ</string>
+    <string name="welcome_title">Документ.\nИ ничего лишнего.</string>
+    <string name="welcome_body">Откройте PDF, прочитайте и отправьте туда, где его ждут.</string>
+    <string name="local_note">Ваши документы остаются на устройстве</string>
+    <string name="loading">Открываем документ…</string>
+    <string name="cancel">Отмена</string>
+    <string name="error_title">Не удалось открыть PDF</string>
+    <string name="error_access">Нет доступа к файлу. Выберите его заново через «Открыть PDF».</string>
+    <string name="error_invalid">Файл повреждён или не является PDF. Попробуйте другой документ.</string>
+    <string name="error_password">Документ защищён паролем. В этой версии можно открыть только PDF без пароля.</string>
+    <string name="error_large">Файл больше 200 МБ. Выберите документ меньшего размера.</string>
+    <string name="error_io">Не удалось прочитать или сохранить файл. Проверьте свободное место и доступность документа.</string>
+    <string name="error_page">Не удалось отобразить страницу</string>
+    <string name="error_share">Не удалось отправить файл. Попробуйте открыть его заново.</string>
+    <string name="retry">Повторить</string>
+    <string name="page_label">Страница %1$d</string>
+    <string name="page_count">%1$d из %2$d</string>
+    <string name="pages_total">Страниц: %1$d</string>
+    <string name="previous_page">Предыдущая страница</string>
+    <string name="next_page">Следующая страница</string>
+    <string name="page_number">Номер страницы (1–%1$d)</string>
+    <string name="go">Перейти</string>
+    <string name="zoom_in">Увеличить</string>
+    <string name="zoom_out">Уменьшить</string>
+    <string name="reset_zoom">По ширине</string>
+    <string name="zoom_percent">%1$d%%</string>
+</resources>
