@@ -2,6 +2,8 @@ package com.taktey.simplepdfreader
 
 import android.graphics.Bitmap
 import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import java.io.File
@@ -64,6 +66,60 @@ class ReaderScreenTest {
         compose.onNodeWithText("Открыть другой PDF").performClick()
         assertTrue(opened)
         screenshot("error")
+    }
+
+    @Test fun pinchAndDiagonalDragWorkOnTheSameViewport() {
+        val session = PreviewPdfSource(samplePdf(RuntimeEnvironment.getApplication()))
+        var position = 0
+        compose.setContent { ReaderTheme {
+            ReaderApp(ReaderState.Ready(session, 0, 0), {}, {}, { page, offset -> position = page * 10000 + offset }, {})
+        } }
+        val viewport = compose.onNodeWithTag("document-viewport")
+        viewport.performTouchInput {
+            pinch(start0 = Offset(width * .4f, height * .45f), end0 = Offset(width * .15f, height * .35f),
+                start1 = Offset(width * .6f, height * .55f), end1 = Offset(width * .85f, height * .65f), durationMillis = 600)
+        }
+        compose.onNodeWithText("100%").assertDoesNotExist()
+        fun xOffset() = viewport.fetchSemanticsNode().config[SemanticsProperties.HorizontalScrollAxisRange].value()
+        val initialX = xOffset()
+        val initialPosition = position
+        viewport.performTouchInput {
+            swipe(Offset(width * .7f, height * .65f), Offset(width * .35f, height * .4f), durationMillis = 500)
+        }
+        assertTrue("Diagonal drag must move horizontally", xOffset() > initialX)
+        assertTrue("The same diagonal drag must also move vertically", position > initialPosition)
+        viewport.performTouchInput {
+            pinch(start0 = Offset(width * .15f, height * .35f), end0 = Offset(width * .4f, height * .45f),
+                start1 = Offset(width * .85f, height * .65f), end1 = Offset(width * .6f, height * .55f), durationMillis = 600)
+        }
+        compose.onNodeWithText("100%").assertIsDisplayed()
+        compose.onNodeWithText("По ширине").performClick()
+        compose.onNodeWithText("100%").assertIsDisplayed()
+        assertEquals(0f, xOffset())
+        val beforeVertical = position
+        viewport.performTouchInput { swipeUp() }
+        compose.waitForIdle()
+        assertTrue("Vertical scroll at 100% must remain available", position > beforeVertical)
+    }
+
+    @Test fun recentDocumentsCanBeOpenedFromHome() {
+        val recent = RecentDocument("saved/document.pdf", "Документ.pdf", 1_700_000_000_000)
+        var selected: RecentDocument? = null
+        compose.setContent { ReaderTheme {
+            ReaderApp(ReaderState.Empty, {}, {}, { _, _ -> }, {}, listOf(recent), { selected = it })
+        } }
+        compose.onNodeWithText("Недавние документы").performScrollTo().performClick()
+        screenshot("recent")
+        compose.onNodeWithText("Документ.pdf").assertIsDisplayed().performClick()
+        assertEquals(recent, selected)
+    }
+
+    @Test fun recentDocumentsHaveAnEmptyState() {
+        compose.setContent { ReaderTheme { ReaderApp(ReaderState.Empty, {}, {}, { _, _ -> }, {}) } }
+        compose.onNodeWithText("Недавние документы").performScrollTo().performClick()
+        compose.onNodeWithText("Пока нет открытых документов").assertIsDisplayed()
+        compose.onNodeWithText("На главную").performClick()
+        compose.onNodeWithText("Открыть PDF").assertIsDisplayed()
     }
 
     @Test

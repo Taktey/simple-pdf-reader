@@ -24,6 +24,8 @@ class MainActivity : ComponentActivity() {
             ReaderTheme {
                 ReaderApp(
                     state = reader.state.collectAsStateWithLifecycle().value,
+                    recentDocuments = reader.recent.collectAsStateWithLifecycle().value,
+                    onRecentOpen = reader::openRecent,
                     onOpen = { pickPdf.launch(arrayOf("application/pdf")) },
                     onClose = reader::closeDocument,
                     onPosition = reader::rememberPosition,

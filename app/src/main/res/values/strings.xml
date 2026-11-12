@@ -1,6 +1,10 @@
 <resources>
     <string name="app_name">Simple PDF Reader</string>
     <string name="open_pdf">Открыть PDF</string>
+    <string name="recent_documents">Недавние документы</string>
+    <string name="recent_empty">Пока нет открытых документов</string>
+    <string name="recent_hint">Последние 20 локальных копий. Копии могут удаляться после 7 дней без использования.</string>
+    <string name="back_home">На главную</string>
     <string name="open_another">Открыть другой PDF</string>
     <string name="share">Поделиться</string>
     <string name="close">Закрыть документ</string>

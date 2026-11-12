@@ -4,11 +4,11 @@ import android.graphics.Bitmap
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.rememberTransformableState
-import androidx.compose.foundation.gestures.transformable
-import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -28,7 +28,14 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.scrollBy
+import androidx.compose.ui.semantics.horizontalScrollAxisRange
+import androidx.compose.ui.semantics.ScrollAxisRange
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -40,11 +47,16 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
+import java.text.DateFormat
+import java.util.Date
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ReaderApp(state: ReaderState, onOpen: () -> Unit, onClose: () -> Unit,
-              onPosition: (Int, Int) -> Unit, onShare: (PdfSource) -> Unit) {
+              onPosition: (Int, Int) -> Unit, onShare: (PdfSource) -> Unit,
+              recentDocuments: List<RecentDocument> = emptyList(), onRecentOpen: (RecentDocument) -> Unit = {}) {
+    var showRecent by rememberSaveable { mutableStateOf(false) }
+    BackHandler(enabled = showRecent) { showRecent = false }
     BackHandler(enabled = state != ReaderState.Empty, onBack = onClose)
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -77,7 +89,12 @@ fun ReaderApp(state: ReaderState, onOpen: () -> Unit, onClose: () -> Unit,
     ) { insets ->
         Box(Modifier.fillMaxSize().padding(insets)) {
             when (state) {
-                ReaderState.Empty -> Welcome(onOpen)
+                ReaderState.Empty -> if (showRecent) {
+                    RecentDocuments(recentDocuments, { showRecent = false }) {
+                        showRecent = false
+                        onRecentOpen(it)
+                    }
+                } else Welcome(onOpen, { showRecent = true })
                 ReaderState.Loading -> Column(Modifier.align(Alignment.Center).padding(24.dp),
                     horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(20.dp)) {
                     CircularProgressIndicator()
@@ -98,7 +115,7 @@ fun ReaderApp(state: ReaderState, onOpen: () -> Unit, onClose: () -> Unit,
 }
 
 @Composable
-private fun Welcome(onOpen: () -> Unit) {
+private fun Welcome(onOpen: () -> Unit, onRecent: () -> Unit) {
     Column(Modifier.fillMaxSize().padding(horizontal = 28.dp, vertical = 16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
       Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
           horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
@@ -116,6 +133,12 @@ private fun Welcome(onOpen: () -> Unit) {
                 Spacer(Modifier.width(12.dp))
                 Text(stringResource(R.string.open_pdf))
             }
+            OutlinedButton(onClick = onRecent, modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
+                shape = RoundedCornerShape(16.dp)) {
+                Icon(Icons.Outlined.History, null)
+                Spacer(Modifier.width(12.dp))
+                Text(stringResource(R.string.recent_documents))
+            }
         }
       }
         Row(Modifier.padding(top = 20.dp),
@@ -128,12 +151,57 @@ private fun Welcome(onOpen: () -> Unit) {
 }
 
 @Composable
+private fun RecentDocuments(documents: List<RecentDocument>, onBack: () -> Unit, onOpen: (RecentDocument) -> Unit) {
+    Column(Modifier.fillMaxSize().padding(horizontal = 20.dp)) {
+        TextButton(onClick = onBack) {
+            Icon(Icons.AutoMirrored.Outlined.ArrowBack, null)
+            Spacer(Modifier.width(8.dp))
+            Text(stringResource(R.string.back_home))
+        }
+        Text(stringResource(R.string.recent_documents), style = MaterialTheme.typography.headlineSmall,
+            modifier = Modifier.padding(vertical = 16.dp))
+        Text(stringResource(R.string.recent_hint), style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
+        if (documents.isEmpty()) {
+            Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                Text(stringResource(R.string.recent_empty))
+            }
+        } else {
+            val dateFormat = remember { DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT) }
+            LazyColumn(contentPadding = PaddingValues(vertical = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(documents, key = { it.path }) { document ->
+                    Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surface) {
+                        Row(Modifier.fillMaxWidth().clickable { onOpen(document) }.padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Outlined.Description, null, tint = MaterialTheme.colorScheme.primary)
+                            Spacer(Modifier.width(16.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text(document.name, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                Text(dateFormat.format(Date(document.openedAt)), style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun DocumentReader(ready: ReaderState.Ready, onPosition: (Int, Int) -> Unit) {
     val session = ready.session
     val list = rememberLazyListState(ready.initialPage, ready.initialOffset)
-    val horizontal = rememberScrollState()
+    var horizontalOffset by rememberSaveable { mutableFloatStateOf(0f) }
     val scope = rememberCoroutineScope()
     var zoom by rememberSaveable { mutableFloatStateOf(1f) }
+    fun setZoom(target: Float) {
+        val next = target.coerceIn(1f, 3f)
+        val factor = next / zoom
+        list.requestScrollToItem(list.firstVisibleItemIndex, (list.firstVisibleItemScrollOffset * factor).roundToInt())
+        horizontalOffset = if (next == 1f) 0f else horizontalOffset * factor
+        zoom = next
+    }
     var showPageInput by rememberSaveable { mutableStateOf(false) }
     var pageNumber by rememberSaveable { mutableStateOf("") }
     BackHandler(enabled = showPageInput) { showPageInput = false }
@@ -151,20 +219,45 @@ private fun DocumentReader(ready: ReaderState.Ready, onPosition: (Int, Int) -> U
         snapshotFlow { list.firstVisibleItemIndex to list.firstVisibleItemScrollOffset }
             .collect { (page, offset) -> onPosition(page, offset) }
     }
-    val transform = rememberTransformableState { _, zoomChange, pan, _ ->
-        zoom = (zoom * zoomChange).coerceIn(1f, 3f)
-        if (zoom > 1f) {
-            horizontal.dispatchRawDelta(-pan.x)
-            list.dispatchRawDelta(-pan.y)
-        }
-    }
     Column(Modifier.fillMaxSize().imePadding()) {
         BoxWithConstraints(Modifier.weight(1f).fillMaxWidth().clipToBounds()
             .background(MaterialTheme.colorScheme.surfaceVariant)) {
-            val pageWidth = maxWidth * zoom
-            Box(Modifier.fillMaxSize().transformable(transform, canPan = { zoom > 1f })
-                .horizontalScroll(horizontal)) {
-                LazyColumn(state = list, modifier = Modifier.width(pageWidth).fillMaxHeight(),
+            val viewportWidth = with(LocalDensity.current) { maxWidth.toPx() }
+            LaunchedEffect(viewportWidth, zoom) {
+                horizontalOffset = horizontalOffset.coerceIn(0f, viewportWidth * (zoom - 1f))
+            }
+            Box(Modifier.fillMaxSize().testTag("document-viewport")
+                .semantics {
+                    horizontalScrollAxisRange = ScrollAxisRange({ horizontalOffset }, { viewportWidth * (zoom - 1f) })
+                    scrollBy { x, y ->
+                        horizontalOffset = (horizontalOffset + x).coerceIn(0f, viewportWidth * (zoom - 1f))
+                        list.dispatchRawDelta(y)
+                        true
+                    }
+                }
+                .pointerInput(session) {
+                    // One gesture owner: no nested scrollable can consume a pinch or lock an axis.
+                    detectTransformGestures { centroid, pan, zoomChange, _ ->
+                        val oldZoom = zoom
+                        val newZoom = (oldZoom * zoomChange).coerceIn(1f, 3f)
+                        val factor = newZoom / oldZoom
+                        horizontalOffset = ((horizontalOffset + centroid.x) * factor - centroid.x - pan.x)
+                            .coerceIn(0f, size.width * (newZoom - 1f))
+                        zoom = newZoom
+                        if (factor != 1f) {
+                            val offset = ((list.firstVisibleItemScrollOffset + centroid.y) * factor - centroid.y - pan.y).roundToInt()
+                            list.requestScrollToItem(list.firstVisibleItemIndex, offset)
+                        } else {
+                            list.dispatchRawDelta(-pan.y)
+                        }
+                    }
+                }) {
+                LazyColumn(state = list, userScrollEnabled = false,
+                    modifier = Modifier.fillMaxHeight().layout { measurable, constraints ->
+                        val contentWidth = (constraints.maxWidth * zoom).roundToInt()
+                        val page = measurable.measure(constraints.copy(minWidth = contentWidth, maxWidth = contentWidth))
+                        layout(constraints.maxWidth, page.height) { page.place(-horizontalOffset.roundToInt(), 0) }
+                    },
                     contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                     items(session.pageCount, key = { it }) { index ->
                         PageSurface(session, index)
@@ -202,12 +295,12 @@ private fun DocumentReader(ready: ReaderState.Ready, onPosition: (Int, Int) -> U
                 }
                 Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.Center) {
-                    ActionIcon(Icons.Outlined.Remove, R.string.zoom_out, { zoom = (zoom - .25f).coerceAtLeast(1f) }, zoom > 1f)
+                    ActionIcon(Icons.Outlined.Remove, R.string.zoom_out, { setZoom(zoom - .25f) }, zoom > 1f)
                     Text(stringResource(R.string.zoom_percent, (zoom * 100).roundToInt()), Modifier.width(56.dp), textAlign = TextAlign.Center,
                         style = MaterialTheme.typography.labelLarge)
-                    ActionIcon(Icons.Outlined.Add, R.string.zoom_in, { zoom = (zoom + .25f).coerceAtMost(3f) }, zoom < 3f)
+                    ActionIcon(Icons.Outlined.Add, R.string.zoom_in, { setZoom(zoom + .25f) }, zoom < 3f)
                     Spacer(Modifier.weight(1f))
-                    TextButton(onClick = { zoom = 1f; scope.launch { horizontal.scrollTo(0) } }) {
+                    TextButton(onClick = { setZoom(1f) }) {
                         Text(stringResource(R.string.reset_zoom))
                     }
                 }

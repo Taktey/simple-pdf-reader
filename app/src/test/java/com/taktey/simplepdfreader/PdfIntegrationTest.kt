@@ -57,6 +57,24 @@ class PdfIntegrationTest {
         assertNull(PdfIntents.incoming(Intent(Intent.ACTION_MAIN, uri)))
     }
 
+    @Test fun recentDocumentsSurviveStoreRecreationAndExcludeMissingFiles() = runBlocking {
+        val original = samplePdf(context)
+        val uri = FileProvider.getUriForFile(context, "${context.packageName}.files", original)
+        val store = DocumentStore(context)
+        val first = store.import(uri)
+        val second = store.import(uri)
+        first.setLastModified(1000)
+        second.setLastModified(2000)
+        val recreated = DocumentStore(context)
+        val documents = recreated.recentDocuments().filter { it.path != store.relativePath(original) }
+        assertEquals(listOf(store.relativePath(second), store.relativePath(first)), documents.map { it.path })
+        assertEquals(second.canonicalFile, recreated.restore(documents.first().path))
+        second.delete()
+        assertFalse(recreated.recentDocuments().any { it.path == store.relativePath(second) })
+        File(first.parentFile, ".importing").writeText("incomplete")
+        assertFalse(recreated.recentDocuments().any { it.name == ".importing" })
+    }
+
     @Test(expected = DocumentAccessDenied::class) fun cannotRestoreOutsideDocumentDirectory() {
         DocumentStore(context).restore("../../shared_prefs/private.xml")
     }

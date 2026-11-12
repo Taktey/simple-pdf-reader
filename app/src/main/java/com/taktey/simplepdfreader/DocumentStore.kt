@@ -15,6 +15,8 @@ class DocumentTooLarge : IOException()
 class InvalidDocument : IOException()
 class DocumentAccessDenied : IOException()
 
+data class RecentDocument(val path: String, val name: String, val openedAt: Long)
+
 object DocumentFiles {
     const val MAX_BYTES = 200L * 1024 * 1024
 
@@ -53,15 +55,17 @@ class DocumentStore(private val context: Context) {
         val directory = File(root, UUID.randomUUID().toString())
         if (!directory.mkdirs()) throw IOException("Cannot create document directory")
         val file = File(directory, DocumentFiles.safeName(name))
+        val temporary = File(directory, ".importing")
         var complete = false
         try {
             val jobContext = coroutineContext
             val input = try {
                 context.contentResolver.openInputStream(uri) ?: throw DocumentAccessDenied()
             } catch (_: SecurityException) { throw DocumentAccessDenied() }
-            input.use { source -> file.outputStream().use { destination ->
+            input.use { source -> temporary.outputStream().use { destination ->
                 DocumentFiles.copyBounded(source, destination) { jobContext.ensureActive() }
             } }
+            if (!temporary.renameTo(file)) throw IOException("Cannot finish document import")
             complete = true
             return file
         } catch (_: SecurityException) {
@@ -72,6 +76,26 @@ class DocumentStore(private val context: Context) {
     }
 
     fun relativePath(file: File): String = file.canonicalFile.relativeTo(root).path
+
+    fun recentDocuments(): List<RecentDocument> = root.listFiles().orEmpty()
+        .filter { it.isDirectory }
+        .flatMap { directory -> directory.listFiles().orEmpty().toList() }
+        .filter { it.isFile && it.extension.equals("pdf", ignoreCase = true) && it.length() > 0 }
+        .mapNotNull { file ->
+            runCatching {
+                val path = relativePath(file)
+                val checked = restore(path)
+                RecentDocument(path, checked.name, checked.lastModified())
+            }.getOrNull()
+        }
+        .sortedByDescending { it.openedAt }
+        .take(20)
+
+    fun markOpened(file: File) {
+        val now = System.currentTimeMillis()
+        file.setLastModified(now)
+        file.parentFile?.setLastModified(now)
+    }
 
     fun restore(relativePath: String): File {
         val directory = root.canonicalFile

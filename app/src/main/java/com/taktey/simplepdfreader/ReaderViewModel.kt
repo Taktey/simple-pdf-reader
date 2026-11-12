@@ -28,14 +28,25 @@ class ReaderViewModel(application: Application, private val saved: SavedStateHan
     private val store = DocumentStore(application)
     private val mutableState = MutableStateFlow<ReaderState>(ReaderState.Empty)
     val state = mutableState.asStateFlow()
+    private val mutableRecent = MutableStateFlow<List<RecentDocument>>(emptyList())
+    val recent = mutableRecent.asStateFlow()
     private var openJob: Job? = null
     private var current: PdfSession? = null
 
     init {
+        refreshRecent()
         saved.get<String>("document")?.let { path -> load(restoring = true) { store.restore(path) } }
     }
 
     fun open(uri: Uri) = load(restoring = false) { store.import(uri) }
+
+    fun openRecent(document: RecentDocument) = load(restoring = false) { store.restore(document.path) }
+
+    private fun refreshRecent() {
+        viewModelScope.launch {
+            mutableRecent.value = withContext(Dispatchers.IO) { store.recentDocuments() }
+        }
+    }
 
     private fun load(restoring: Boolean, source: suspend () -> File) {
         openJob?.cancel()
@@ -56,6 +67,7 @@ class ReaderViewModel(application: Application, private val saved: SavedStateHan
                         if (!restoring) file.parentFile?.deleteRecursively()
                         throw error
                     }
+                    store.markOpened(file)
                     store.cleanOldCopies(file)
                 }
                 val session = requireNotNull(pending)
@@ -65,6 +77,7 @@ class ReaderViewModel(application: Application, private val saved: SavedStateHan
                 current = session
                 mutableState.value = ReaderState.Ready(session, saved["page"] ?: 0, offset)
                 pending = null
+                refreshRecent()
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Exception) {
@@ -77,6 +90,7 @@ class ReaderViewModel(application: Application, private val saved: SavedStateHan
                     else -> R.string.error_invalid
                 }
                 mutableState.value = ReaderState.Error(message)
+                refreshRecent()
             } finally {
                 withContext(NonCancellable + Dispatchers.IO) {
                     pending?.close()
