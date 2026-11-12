@@ -102,6 +102,33 @@ class ReaderScreenTest {
         assertTrue("Vertical scroll at 100% must remain available", position > beforeVertical)
     }
 
+    @Test fun fastSwipeContinuesAfterReleaseAndStopsOnTouch() {
+        val session = PreviewPdfSource(samplePdf(RuntimeEnvironment.getApplication()))
+        var position = 0
+        compose.setContent { ReaderTheme {
+            ReaderApp(ReaderState.Ready(session, 0, 0), {}, {}, { page, offset -> position = page * 10000 + offset }, {})
+        } }
+        compose.waitForIdle()
+        compose.mainClock.autoAdvance = false
+        val viewport = compose.onNodeWithTag("document-viewport")
+        viewport.performTouchInput { swipe(Offset(centerX, height * .65f), Offset(centerX, height * .4f), durationMillis = 120) }
+        compose.mainClock.advanceTimeByFrame()
+        compose.waitForIdle()
+        val releasedAt = position
+        compose.mainClock.advanceTimeBy(160)
+        compose.waitForIdle()
+        assertTrue("Release must continue scrolling", position > releasedAt)
+        viewport.performTouchInput { down(center) }
+        compose.mainClock.advanceTimeByFrame()
+        compose.waitForIdle()
+        val stoppedAt = position
+        compose.mainClock.advanceTimeBy(200)
+        compose.waitForIdle()
+        assertEquals("Touch must stop inertia", stoppedAt, position)
+        viewport.performTouchInput { up() }
+        compose.mainClock.autoAdvance = true
+    }
+
     @Test fun recentDocumentsCanBeOpenedFromHome() {
         val recent = RecentDocument("saved/document.pdf", "Документ.pdf", 1_700_000_000_000)
         var selected: RecentDocument? = null
@@ -112,6 +139,37 @@ class ReaderScreenTest {
         screenshot("recent")
         compose.onNodeWithText("Документ.pdf").assertIsDisplayed().performClick()
         assertEquals(recent, selected)
+    }
+
+    @Test fun deletingRecentDocumentRequiresConfirmation() {
+        val recent = RecentDocument("saved/document.pdf", "Документ.pdf", 1_700_000_000_000)
+        var deleted: RecentDocument? = null
+        var cleared = false
+        compose.setContent { ReaderTheme {
+            ReaderApp(ReaderState.Empty, {}, {}, { _, _ -> }, {}, listOf(recent), {},
+                onRecentDelete = { deleted = it }, onRecentClear = { cleared = true })
+        } }
+        compose.onNodeWithText("Недавние документы").performScrollTo().performClick()
+        compose.onNodeWithContentDescription("Удалить локальную копию").performClick()
+        assertNull(deleted)
+        compose.onNodeWithText("Отмена").performClick()
+        assertNull(deleted)
+        compose.onNodeWithContentDescription("Удалить локальную копию").performClick()
+        compose.onNodeWithText("Удалить", useUnmergedTree = true).performClick()
+        assertEquals(recent, deleted)
+        compose.onNodeWithText("Удалить все локальные копии").performClick()
+        assertFalse(cleared)
+        compose.onNodeWithText("Удалить", useUnmergedTree = true).performClick()
+        assertTrue(cleared)
+    }
+
+    @Test fun screenshotProtectionCanBeEnabled() {
+        var protected = false
+        compose.setContent { ReaderTheme {
+            ReaderApp(ReaderState.Empty, {}, {}, { _, _ -> }, {}, onProtectionChange = { protected = it })
+        } }
+        compose.onNode(isToggleable()).performScrollTo().performClick()
+        assertTrue(protected)
     }
 
     @Test fun recentDocumentsHaveAnEmptyState() {

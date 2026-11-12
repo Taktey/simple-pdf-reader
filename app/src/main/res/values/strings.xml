@@ -3,7 +3,7 @@
     <string name="open_pdf">Открыть PDF</string>
     <string name="recent_documents">Недавние документы</string>
     <string name="recent_empty">Пока нет открытых документов</string>
-    <string name="recent_hint">Последние 20 локальных копий. Копии могут удаляться после 7 дней без использования.</string>
+    <string name="recent_hint">Последние 20 документов. Лимит хранилища — 500 МБ. Старые копии удаляются при нехватке места и после 7 дней без использования.</string>
     <string name="back_home">На главную</string>
     <string name="open_another">Открыть другой PDF</string>
     <string name="share">Поделиться</string>
@@ -33,4 +33,12 @@
     <string name="zoom_out">Уменьшить</string>
     <string name="reset_zoom">По ширине</string>
     <string name="zoom_percent">%1$d%%</string>
+    <string name="error_storage">Недостаточно места. Удалите ненужные локальные копии. Общий лимит — 500 МБ.</string>
+    <string name="error_worker">Обработка документа остановлена или превысила время ожидания. Попробуйте открыть файл заново.</string>
+    <string name="protect_screen">Запретить снимки экрана</string>
+    <string name="delete_document">Удалить локальную копию</string>
+    <string name="clear_documents">Удалить все локальные копии</string>
+    <string name="confirm_delete">Удалить сохранённую в приложении копию? Исходный файл не изменится. Уже подготовленные файлы для отправки сохранятся до истечения срока доступа.</string>
+    <string name="confirm_clear">Удалить все копии, включая подготовленные для отправки? Старые ссылки из Share перестанут открываться. Исходные файлы вне приложения не изменятся.</string>
+    <string name="delete_confirm">Удалить</string>
 </resources>

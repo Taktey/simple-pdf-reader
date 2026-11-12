@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.plugin.compose")
@@ -10,8 +12,8 @@ android {
         applicationId = "com.taktey.simplepdfreader"
         minSdk = 26
         targetSdk = 36
-        versionCode = 2
-        versionName = "0.2.0"
+        versionCode = 3
+        versionName = "0.3.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     compileOptions {
@@ -24,6 +26,25 @@ android {
         unitTests.all { it.maxHeapSize = "2g" }
     }
     packaging { resources.excludes += "/META-INF/{AL2.0,LGPL2.1}" }
+    signingConfigs {
+        create("release") {
+            val signing = Properties()
+            val propertiesFile = rootProject.file("signing.properties")
+            if (propertiesFile.exists()) propertiesFile.inputStream().use { signing.load(it) }
+            if (signing.containsKey("storeFile")) {
+                storeFile = rootProject.file(signing.getProperty("storeFile"))
+                storePassword = signing.getProperty("storePassword")
+                keyAlias = signing.getProperty("keyAlias")
+                keyPassword = signing.getProperty("keyPassword")
+            }
+        }
+    }
+    buildTypes {
+        release {
+            isDebuggable = false
+            signingConfig = signingConfigs.getByName("release")
+        }
+    }
 }
 kotlin { jvmToolchain(17) }
 

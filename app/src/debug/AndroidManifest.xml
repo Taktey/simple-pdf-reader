@@ -1,0 +1,6 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <service android:name=".WatchdogTestService" android:process=":watchdog_test" android:isolatedProcess="true" android:exported="false" />
+        <provider android:name=".BlockedTestProvider" android:authorities="${applicationId}.blocked-test" android:exported="false" />
+    </application>
+</manifest>

@@ -1,10 +1,16 @@
 package com.taktey.simplepdfreader
 
 import android.graphics.Bitmap
+import androidx.compose.animation.rememberSplineBasedDecay
+import androidx.compose.animation.core.AnimationState
+import androidx.compose.animation.core.VectorConverter
+import androidx.compose.animation.core.animateDecay
+import androidx.compose.ui.geometry.Offset
+import kotlinx.coroutines.Job
+import kotlin.math.abs
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -33,6 +39,7 @@ import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.scrollBy
 import androidx.compose.ui.semantics.horizontalScrollAxisRange
 import androidx.compose.ui.semantics.ScrollAxisRange
@@ -54,7 +61,9 @@ import java.util.Date
 @Composable
 fun ReaderApp(state: ReaderState, onOpen: () -> Unit, onClose: () -> Unit,
               onPosition: (Int, Int) -> Unit, onShare: (PdfSource) -> Unit,
-              recentDocuments: List<RecentDocument> = emptyList(), onRecentOpen: (RecentDocument) -> Unit = {}) {
+              recentDocuments: List<RecentDocument> = emptyList(), onRecentOpen: (RecentDocument) -> Unit = {},
+              onRecentDelete: (RecentDocument) -> Unit = {}, onRecentClear: () -> Unit = {},
+              protectScreen: Boolean = false, onProtectionChange: (Boolean) -> Unit = {}) {
     var showRecent by rememberSaveable { mutableStateOf(false) }
     BackHandler(enabled = showRecent) { showRecent = false }
     BackHandler(enabled = state != ReaderState.Empty, onBack = onClose)
@@ -90,11 +99,11 @@ fun ReaderApp(state: ReaderState, onOpen: () -> Unit, onClose: () -> Unit,
         Box(Modifier.fillMaxSize().padding(insets)) {
             when (state) {
                 ReaderState.Empty -> if (showRecent) {
-                    RecentDocuments(recentDocuments, { showRecent = false }) {
+                    RecentDocuments(recentDocuments, { showRecent = false }, onRecentDelete, onRecentClear) {
                         showRecent = false
                         onRecentOpen(it)
                     }
-                } else Welcome(onOpen, { showRecent = true })
+                } else Welcome(onOpen, { showRecent = true }, protectScreen, onProtectionChange)
                 ReaderState.Loading -> Column(Modifier.align(Alignment.Center).padding(24.dp),
                     horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(20.dp)) {
                     CircularProgressIndicator()
@@ -115,7 +124,8 @@ fun ReaderApp(state: ReaderState, onOpen: () -> Unit, onClose: () -> Unit,
 }
 
 @Composable
-private fun Welcome(onOpen: () -> Unit, onRecent: () -> Unit) {
+private fun Welcome(onOpen: () -> Unit, onRecent: () -> Unit, protectScreen: Boolean, onProtectionChange: (Boolean) -> Unit) {
+    val protectionLabel = stringResource(R.string.protect_screen)
     Column(Modifier.fillMaxSize().padding(horizontal = 28.dp, vertical = 16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
       Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
           horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
@@ -139,6 +149,11 @@ private fun Welcome(onOpen: () -> Unit, onRecent: () -> Unit) {
                 Spacer(Modifier.width(12.dp))
                 Text(stringResource(R.string.recent_documents))
             }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(stringResource(R.string.protect_screen), Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                Switch(checked = protectScreen, onCheckedChange = onProtectionChange,
+                    modifier = Modifier.semantics { contentDescription = protectionLabel })
+            }
         }
       }
         Row(Modifier.padding(top = 20.dp),
@@ -151,7 +166,10 @@ private fun Welcome(onOpen: () -> Unit, onRecent: () -> Unit) {
 }
 
 @Composable
-private fun RecentDocuments(documents: List<RecentDocument>, onBack: () -> Unit, onOpen: (RecentDocument) -> Unit) {
+private fun RecentDocuments(documents: List<RecentDocument>, onBack: () -> Unit,
+                            onDelete: (RecentDocument) -> Unit, onClear: () -> Unit, onOpen: (RecentDocument) -> Unit) {
+    var deleting by remember { mutableStateOf<RecentDocument?>(null) }
+    var clearing by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxSize().padding(horizontal = 20.dp)) {
         TextButton(onClick = onBack) {
             Icon(Icons.AutoMirrored.Outlined.ArrowBack, null)
@@ -162,6 +180,7 @@ private fun RecentDocuments(documents: List<RecentDocument>, onBack: () -> Unit,
             modifier = Modifier.padding(vertical = 16.dp))
         Text(stringResource(R.string.recent_hint), style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant)
+        TextButton(onClick = { clearing = true }) { Text(stringResource(R.string.clear_documents)) }
         if (documents.isEmpty()) {
             Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                 Text(stringResource(R.string.recent_empty))
@@ -180,11 +199,22 @@ private fun RecentDocuments(documents: List<RecentDocument>, onBack: () -> Unit,
                                 Text(dateFormat.format(Date(document.openedAt)), style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
+                            ActionIcon(Icons.Outlined.DeleteOutline, R.string.delete_document, { deleting = document })
                         }
                     }
                 }
             }
         }
+    }
+    if (deleting != null || clearing) {
+        AlertDialog(onDismissRequest = { deleting = null; clearing = false },
+            title = { Text(stringResource(if (clearing) R.string.clear_documents else R.string.delete_document)) },
+            text = { Text(stringResource(if (clearing) R.string.confirm_clear else R.string.confirm_delete)) },
+            confirmButton = { TextButton(onClick = {
+                if (clearing) onClear() else deleting?.let(onDelete)
+                deleting = null; clearing = false
+            }) { Text(stringResource(R.string.delete_confirm)) } },
+            dismissButton = { TextButton(onClick = { deleting = null; clearing = false }) { Text(stringResource(R.string.cancel)) } })
     }
 }
 
@@ -195,7 +225,10 @@ private fun DocumentReader(ready: ReaderState.Ready, onPosition: (Int, Int) -> U
     var horizontalOffset by rememberSaveable { mutableFloatStateOf(0f) }
     val scope = rememberCoroutineScope()
     var zoom by rememberSaveable { mutableFloatStateOf(1f) }
+    var flingJob by remember { mutableStateOf<Job?>(null) }
+    val decay = rememberSplineBasedDecay<Offset>()
     fun setZoom(target: Float) {
+        flingJob?.cancel()
         val next = target.coerceIn(1f, 3f)
         val factor = next / zoom
         list.requestScrollToItem(list.firstVisibleItemIndex, (list.firstVisibleItemScrollOffset * factor).roundToInt())
@@ -236,8 +269,7 @@ private fun DocumentReader(ready: ReaderState.Ready, onPosition: (Int, Int) -> U
                     }
                 }
                 .pointerInput(session) {
-                    // One gesture owner: no nested scrollable can consume a pinch or lock an axis.
-                    detectTransformGestures { centroid, pan, zoomChange, _ ->
+                    detectReaderGestures(onDown = { flingJob?.cancel() }, onTransform = { centroid, pan, zoomChange ->
                         val oldZoom = zoom
                         val newZoom = (oldZoom * zoomChange).coerceIn(1f, 3f)
                         val factor = newZoom / oldZoom
@@ -250,7 +282,21 @@ private fun DocumentReader(ready: ReaderState.Ready, onPosition: (Int, Int) -> U
                         } else {
                             list.dispatchRawDelta(-pan.y)
                         }
-                    }
+                    }, onFling = { speed ->
+                        flingJob = scope.launch {
+                            var previous = Offset.Zero
+                            AnimationState(Offset.VectorConverter, Offset.Zero, Offset(-speed.x, -speed.y)).animateDecay(decay) {
+                                val delta = value - previous
+                                previous = value
+                                val oldX = horizontalOffset
+                                horizontalOffset = (oldX + delta.x).coerceIn(0f, size.width * (zoom - 1f))
+                                val consumedY = list.dispatchRawDelta(delta.y)
+                                val xStopped = abs(velocity.x) < 1f || abs(horizontalOffset - oldX - delta.x) > .5f
+                                val yStopped = abs(velocity.y) < 1f || abs(consumedY - delta.y) > .5f
+                                if (xStopped && yStopped) cancelAnimation()
+                            }
+                        }
+                    })
                 }) {
                 LazyColumn(state = list, userScrollEnabled = false,
                     modifier = Modifier.fillMaxHeight().layout { measurable, constraints ->
@@ -270,12 +316,12 @@ private fun DocumentReader(ready: ReaderState.Ready, onPosition: (Int, Int) -> U
                 Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.Center) {
                     ActionIcon(Icons.AutoMirrored.Outlined.NavigateBefore, R.string.previous_page,
-                        { scope.launch { list.scrollToItem((currentPage - 2).coerceAtLeast(0)) } }, currentPage > 1)
+                        { flingJob?.cancel(); scope.launch { list.scrollToItem((currentPage - 2).coerceAtLeast(0)) } }, currentPage > 1)
                     TextButton(onClick = { showPageInput = !showPageInput }, modifier = Modifier.weight(1f)) {
                         Text(stringResource(R.string.page_count, currentPage, session.pageCount))
                     }
                     ActionIcon(Icons.AutoMirrored.Outlined.NavigateNext, R.string.next_page,
-                        { scope.launch { list.scrollToItem(currentPage.coerceAtMost(session.pageCount - 1)) } }, currentPage < session.pageCount)
+                        { flingJob?.cancel(); scope.launch { list.scrollToItem(currentPage.coerceAtMost(session.pageCount - 1)) } }, currentPage < session.pageCount)
                 }
                 if (showPageInput) {
                     val target = pageNumber.toIntOrNull()?.takeIf { it in 1..session.pageCount }
@@ -287,7 +333,7 @@ private fun DocumentReader(ready: ReaderState.Ready, onPosition: (Int, Int) -> U
                             label = { Text(stringResource(R.string.page_number, session.pageCount)) }, singleLine = true,
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
                         TextButton(enabled = target != null, onClick = {
-                            target?.let { scope.launch { list.scrollToItem(it - 1) } }
+                            target?.let { flingJob?.cancel(); scope.launch { list.scrollToItem(it - 1) } }
                             showPageInput = false
                         }) { Text(stringResource(R.string.go)) }
                         ActionIcon(Icons.Outlined.Close, R.string.cancel, { showPageInput = false })
@@ -315,18 +361,23 @@ private fun PageSurface(session: PdfSource, index: Int) {
     var aspect by remember { mutableFloatStateOf(.707f) }
     var bitmap by remember { mutableStateOf<Bitmap?>(null) }
     var failed by remember { mutableStateOf(false) }
+    var workerFailed by remember { mutableStateOf(false) }
     BoxWithConstraints(Modifier.fillMaxWidth()) {
         val density = LocalDensity.current
         val renderWidth = with(density) { maxWidth.roundToPx() }
         LaunchedEffect(session, index, renderWidth, retry) {
             failed = false
+            workerFailed = false
             try {
                 aspect = session.pageSize(index).ratio.coerceIn(.08f, 12f)
                 // Keep the previous bitmap visible while a pinch gesture changes the layout.
                 if (bitmap != null) delay(180)
                 bitmap = session.render(index, renderWidth)
             } catch (cancelled: CancellationException) { throw cancelled }
-            catch (_: Exception) { failed = true }
+            catch (error: Exception) {
+                failed = true
+                workerFailed = error is WorkerFailure || error is WorkerTimeout
+            }
         }
         Surface(Modifier.fillMaxWidth().aspectRatio(aspect), color = Color.White,
             shadowElevation = 2.dp, shape = RoundedCornerShape(2.dp)) {
@@ -335,8 +386,8 @@ private fun PageSurface(session: PdfSource, index: Int) {
                 if (page != null) Image(page.asImageBitmap(), stringResource(R.string.page_label, index + 1), Modifier.fillMaxSize())
                 if (failed) {
                     Column(Modifier.padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(stringResource(R.string.error_page), color = Color.DarkGray, textAlign = TextAlign.Center)
-                        TextButton(onClick = { retry++ }) { Text(stringResource(R.string.retry)) }
+                        Text(stringResource(if (workerFailed) R.string.error_worker else R.string.error_page), color = Color.DarkGray, textAlign = TextAlign.Center)
+                        if (!workerFailed) TextButton(onClick = { retry++ }) { Text(stringResource(R.string.retry)) }
                     }
                 } else if (page == null) CircularProgressIndicator(Modifier.size(28.dp))
             }

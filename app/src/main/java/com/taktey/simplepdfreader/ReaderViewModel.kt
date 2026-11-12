@@ -15,6 +15,8 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.withContext
 
 sealed interface ReaderState {
@@ -34,23 +36,30 @@ class ReaderViewModel(application: Application, private val saved: SavedStateHan
     private var current: PdfSession? = null
 
     init {
-        refreshRecent()
-        saved.get<String>("document")?.let { path -> load(restoring = true) { store.restore(path) } }
+        val path = saved.get<String>("document")
+        if (path != null) load(restoring = true) { store.restore(path) } else refreshRecent()
     }
 
-    fun open(uri: Uri) = load(restoring = false) { store.import(uri) }
+    fun open(uri: Uri) {
+        val keep = current?.file
+        load(restoring = false) { store.import(uri, keep) }
+    }
 
     fun openRecent(document: RecentDocument) = load(restoring = false) { store.restore(document.path) }
 
     private fun refreshRecent() {
         viewModelScope.launch {
-            mutableRecent.value = withContext(Dispatchers.IO) { store.recentDocuments() }
+            mutableRecent.value = withContext(Dispatchers.IO) {
+                store.refreshRecent(current?.file)
+            }
         }
     }
 
     private fun load(restoring: Boolean, source: suspend () -> File) {
-        openJob?.cancel()
+        val previousJob = openJob
+        previousJob?.cancel()
         val previous = current
+        previous?.close()
         current = null
         mutableState.value = ReaderState.Loading
         val page = if (restoring) saved.get<Int>("page") ?: 0 else 0
@@ -59,16 +68,16 @@ class ReaderViewModel(application: Application, private val saved: SavedStateHan
         openJob = viewModelScope.launch {
             var pending: PdfSession? = null
             try {
+                previousJob?.join()
                 withContext(Dispatchers.IO) {
                     previous?.close()
                     val file = source()
-                    try { pending = PdfSession(file) }
+                    try { pending = PdfSession.open(getApplication(), file) }
                     catch (error: Exception) {
-                        if (!restoring) file.parentFile?.deleteRecursively()
+                        if (error is InvalidDocument || error is SecurityException) file.parentFile?.deleteRecursively()
                         throw error
                     }
                     store.markOpened(file)
-                    store.cleanOldCopies(file)
                 }
                 val session = requireNotNull(pending)
                 saved["document"] = store.relativePath(session.file)
@@ -81,8 +90,11 @@ class ReaderViewModel(application: Application, private val saved: SavedStateHan
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Exception) {
+                currentCoroutineContext().ensureActive()
                 val message = when (error) {
                     is DocumentTooLarge -> R.string.error_large
+                    is StorageFull -> R.string.error_storage
+                    is WorkerTimeout, is WorkerFailure -> R.string.error_worker
                     is DocumentAccessDenied, is FileNotFoundException -> R.string.error_access
                     is SecurityException -> R.string.error_password
                     is InvalidDocument, is IllegalArgumentException -> R.string.error_invalid
@@ -100,6 +112,24 @@ class ReaderViewModel(application: Application, private val saved: SavedStateHan
         }
     }
 
+    suspend fun shareFile(session: PdfSource): File = store.prepareShare(session.file)
+
+    fun deleteRecent(document: RecentDocument) {
+        viewModelScope.launch {
+            try { store.deleteDocument(document.path) }
+            catch (_: Exception) { mutableState.value = ReaderState.Error(R.string.error_io) }
+            refreshRecent()
+        }
+    }
+
+    fun clearRecent() {
+        viewModelScope.launch {
+            try { store.clearDocuments() }
+            catch (_: Exception) { mutableState.value = ReaderState.Error(R.string.error_io) }
+            refreshRecent()
+        }
+    }
+
     fun rememberPosition(page: Int, offset: Int) {
         if (current == null) return
         saved["page"] = page
@@ -114,7 +144,7 @@ class ReaderViewModel(application: Application, private val saved: SavedStateHan
         saved.remove<Int>("page")
         saved.remove<Int>("offset")
         mutableState.value = ReaderState.Empty
-        viewModelScope.launch(Dispatchers.IO) { old?.close() }
+        old?.close()
     }
 
     override fun onCleared() { current?.close() }

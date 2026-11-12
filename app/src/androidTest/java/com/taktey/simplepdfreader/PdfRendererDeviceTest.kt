@@ -19,7 +19,8 @@ class PdfRendererDeviceTest {
             file.outputStream().use(input::copyTo)
         }
         try {
-            PdfSession(file).use { session ->
+            PdfSession.open(instrumentation.targetContext, file).use { session ->
+                assertNotEquals(android.os.Process.myUid(), session.workerUid)
                 assertEquals(3, session.pageCount)
                 assertEquals(PageSize(595, 842), session.pageSize(0))
                 val image = session.render(0, 595)
@@ -33,11 +34,11 @@ class PdfRendererDeviceTest {
         } finally { file.delete() }
     }
 
-    @Test fun rejectsMalformedDocument() {
+    @Test fun rejectsMalformedDocument() = runBlocking {
         val file = File(InstrumentationRegistry.getInstrumentation().targetContext.cacheDir, "invalid.pdf")
         file.writeText("not a PDF")
         try {
-            try { PdfSession(file).use { fail("Invalid PDF was accepted") } }
+            try { PdfSession.open(InstrumentationRegistry.getInstrumentation().targetContext, file).use { fail("Invalid PDF was accepted") } }
             catch (_: java.io.IOException) { /* Expected from the platform renderer. */ }
         } finally { file.delete() }
     }
