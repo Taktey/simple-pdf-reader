@@ -1,6 +1,8 @@
 # Simple PDF Reader
 
-Локальное Android-приложение для чтения и отправки PDF. Рабочая версия — **0.3.0**.
+Локальное Android-приложение для чтения и отправки PDF. Рабочая версия — **0.3.1**.
+
+В 0.3.1 размер универсального release APK уменьшен с 12,57 до 1,33 МБ благодаря R8 и удалению неиспользуемых ресурсов. Кэш переиспользует изображение при разных уровнях масштаба, если фактическое разрешение страницы совпадает. Измерения и ограничения сравнения: [docs/PERFORMANCE.md](docs/PERFORMANCE.md).
 
 <img src="docs/previews/welcome.png" width="250" alt="Главный экран" /> <img src="docs/previews/reader-release.png" width="250" alt="Release-версия с настоящим PDF на эмуляторе" />
 
@@ -79,6 +81,8 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 - Публикация в Google Play не выполнялась. Подробности защиты: [docs/SECURITY.md](docs/SECURITY.md).
 
 Для release-сборки создайте локальный `signing.properties` с `storeFile`, `storePassword`, `keyAlias`, `keyPassword`, указывающими на постоянный ключ, и выполните `./gradlew :app:assembleRelease`. Не добавляйте ключ или пароли в Git.
+
+Версия 0.3.1 устанавливается поверх release 0.3.0 с сохранением локальных документов. Для каждой минифицированной сборки сохраняйте `app/build/outputs/mapping/release/mapping.txt`: он нужен для расшифровки сообщений об ошибках.
 
 ## Проверка
 

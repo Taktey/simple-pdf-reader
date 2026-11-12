@@ -47,9 +47,11 @@ class PdfSession private constructor(override val file: File, private val channe
     }
     @Volatile private var closed = false
 
-    override suspend fun pageSize(index: Int): PageSize = serial.withLock {
+    override suspend fun pageSize(index: Int): PageSize = serial.withLock { pageSizeLocked(index) }
+
+    private suspend fun pageSizeLocked(index: Int): PageSize {
         check(!closed)
-        sizes[index] ?: channel.request(WorkerProtocol.SIZE, Bundle().apply { putInt("page", index) }).let {
+        return sizes[index] ?: channel.request(WorkerProtocol.SIZE, Bundle().apply { putInt("page", index) }).let {
             PageSize(it.getInt("width"), it.getInt("height")).also { size ->
                 require(size.width > 0 && size.height > 0)
                 sizes[index] = size
@@ -59,7 +61,10 @@ class PdfSession private constructor(override val file: File, private val channe
 
     override suspend fun render(index: Int, requestedWidth: Int): Bitmap = serial.withLock {
         check(!closed)
-        val key = "$index:$requestedWidth"
+        // Several zoom levels hit the same pixel budget. Reuse that bitmap instead
+        // of rendering and transferring identical pixels for each requested width.
+        val expected = RenderSize.fit(pageSizeLocked(index), requestedWidth)
+        val key = "$index:${expected.width}:${expected.height}"
         cache.get(key) ?: withContext(Dispatchers.IO + NonCancellable) {
             // The UI owns the only read end. The worker receives only the write end,
             // so it cannot drain the pipe between poll and read or supply a blocking FD.
@@ -72,6 +77,7 @@ class PdfSession private constructor(override val file: File, private val channe
                 pipe[1].close()
                 val size = PageSize(response.getInt("width"), response.getInt("height"))
                 require(RenderSize.valid(size))
+                require(size == expected)
                 // Raw bounded pixels only: never decode worker-supplied PNG/JPEG in the UI process.
                 val bytes = readPixels(pipe[0], size.width * size.height * 4)
                 val bitmap = createBitmap(size.width, size.height)

@@ -1,0 +1,16 @@
+{
+  "label": "v030",
+  "metric": "am start -S -W TotalTime ms",
+  "first_launch_discarded": true,
+  "samples": [
+    856,
+    808,
+    732,
+    784,
+    766,
+    732,
+    750
+  ],
+  "median_ms": 766,
+  "device": "Android 14 API 34 arm64 Pixel 7 emulator"
+}

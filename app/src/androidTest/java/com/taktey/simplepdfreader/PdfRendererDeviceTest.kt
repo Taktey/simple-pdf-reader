@@ -30,6 +30,10 @@ class PdfRendererDeviceTest {
                 assertEquals(Color.rgb(37, 92, 74), image.getPixel(60, 60))
                 assertSame(image, session.render(0, 595))
                 assertNotNull(session.render(2, 1190))
+                val capped = session.render(0, 2200)
+                assertSame("Zooms with the same output size must reuse pixels", capped, session.render(0, 3000))
+                assertSame(capped, session.render(0, 12000))
+                assertNotSame("Smaller render sizes must remain distinct", capped, session.render(0, 595))
             }
         } finally { file.delete() }
     }
